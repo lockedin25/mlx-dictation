@@ -8,6 +8,10 @@
     "chunk_duration": 30.0,
     "use_hotwords": false
   },
+  "spoken_punctuation": {
+    "enabled": true,
+    "ignore": []
+  },
   "vocabulary_boost": {
     "enabled": true,
     "beam_size": 2,

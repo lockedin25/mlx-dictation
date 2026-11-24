@@ -100,6 +100,24 @@ Pass `--model rumble-2-flash` or `--model fluid-speech` to `./setup.sh` if you o
 
 To enable vocabulary boosting after installing, create `vocabulary/active-boost.json` inside `~/Library/Application Support/FluidDictation/` (or your cloned folder) and set `"enabled": true` in `hotkey/config.json`.
 
+## Spoken punctuation and symbols
+
+Say a symbol's name and the symbol is pasted. This runs locally on every transcript, for both models.
+
+| Say | Get |
+|---|---|
+| `src slash app slash main dot py` | `src/app/main.py` |
+| `run the slash goal command` | `run the /goal command` |
+| `state hyphen of hyphen the hyphen art` | `state-of-the-art` |
+| `run npm dash dash version` | `run npm --version` |
+| `snake underscore case` | `snake_case` |
+| `hello comma how are you question mark` | `hello, how are you?` |
+| `first line new line second line` | two lines |
+
+Also: `backslash`, `forward slash`, `at sign`, `tilde`, `period` / `full stop`, `colon`, `semicolon`, `exclamation mark`, `ellipsis`, `open paren` / `close paren`, `open bracket` / `close bracket`, `open brace` / `close brace`, `hashtag`, `dollar sign`, `percent sign`, `ampersand`, `asterisk`, `plus sign`, `equals sign`, `new paragraph`. The full list is in `hotkey/spoken_punctuation.py`.
+
+Say `literal` first to keep the word (`literal slash` gives "slash"). To switch off a phrase for good, list it in `hotkey/config.json`, for example `"spoken_punctuation": {"enabled": true, "ignore": ["period", "dash"]}`. Set `"enabled": false` to turn the feature off. Edits apply on the next dictation.
+
 ## CLI transcription
 
 You can also transcribe audio files directly from the terminal (`HF_HUB_OFFLINE=1` after setup):

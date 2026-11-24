@@ -42,9 +42,11 @@ The optional “Also enable Fn / Globe tap” menu item uses tap once to start a
 - `FluidDictation.swift`: native AppKit menu-bar app, microphone recording, global shortcut and paste.
 - `worker.py`: lightweight coordinator with configurable idle timeout, using private stdin/stdout pipes. No network listener.
 - `inference.py`: MLX model child, started when a transcription arrives and terminated on idle.
-- `config.json`: live idle timeout.
+- `config.json`: live idle timeout, model choice, vocabulary boost and spoken punctuation settings.
+- `spoken_punctuation.py`: turns spoken symbol names ("slash", "hyphen", "comma", "new line") into symbols before paste. Applied in `worker.py` for both models; the unconverted text is kept as `raw_text`.
 - `model-state.json`: actual model residence/PID and current timeout; contains no transcript.
 - `test_idle_lifecycle.py` and `test_long_audio.py`: lifecycle and long-audio integration checks.
+- `test_spoken_punctuation.py`: spoken symbol cases (`python3 hotkey/test_spoken_punctuation.py`, no model needed).
 - `build.sh`: compile, install and ad-hoc sign the app. The project path is embedded in the Swift source; update it before moving the project.
 - `status.json`: current readiness, shortcut registration and permission flags. No audio or transcript content. It updates when app state changes, so permission flags may be stale until the next recording or restart.
 - `~/Library/Logs/FluidDictation-worker.log`: worker diagnostics.
