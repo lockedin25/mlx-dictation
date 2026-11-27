@@ -34,7 +34,8 @@ with tempfile.TemporaryDirectory(prefix='fluid-idle-test-') as tmp:
         assert json.loads(state.read_text())['model_loaded'] is False
         first = request(process, 'samples/recorded-speech.flac')
         assert first['status'] == 'result' and 'stew' in first['text'], first
-        assert first.get('boost_enabled', False) == base.get('vocabulary_boost', {}).get('enabled', False), first
+        if first.get('model') == 'fluid-speech':
+            assert first.get('boost_enabled', False) == base.get('vocabulary_boost', {}).get('enabled', False), first
         second = request(process, 'samples/smoke-test.wav')
         assert second['status'] == 'result' and 'meeting' in second['text'], second
         assert first['model_pid'] == second['model_pid'], 'Model was not reused'

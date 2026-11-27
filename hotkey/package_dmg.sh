@@ -43,6 +43,7 @@ cp "$ROOT/hotkey/worker.py" "$STAGE/payload/hotkey/"
 cp "$ROOT/hotkey/inference.py" "$STAGE/payload/hotkey/"
 cp "$ROOT/hotkey/vocabulary_boost.py" "$STAGE/payload/hotkey/"
 cp "$ROOT/hotkey/FluidDictation.swift" "$STAGE/payload/hotkey/"
+cp "$ROOT/hotkey/"{MeetingController.swift,MeetingCapture.swift,ChromeMeetDetector.swift,discord_voice.py,meeting_pipeline.py,diarize.py,llm_provider.py,archive_db.py,meeting_mcp.py,meetings_cli.py} "$STAGE/payload/hotkey/"
 cp "$ROOT/hotkey/build.sh" "$STAGE/payload/hotkey/"
 chmod +x "$STAGE/payload/hotkey/build.sh"
 

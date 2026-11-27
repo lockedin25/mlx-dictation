@@ -12,5 +12,45 @@
     "enabled": true,
     "beam_size": 2,
     "terms_file": "vocabulary/active-boost.json"
+  },
+  "diarization": {
+    "enabled": true,
+    "model_path": "models/nemotron-3-diarization",
+    "threshold": 0.5,
+    "min_duration": 0.4,
+    "merge_gap": 0.5,
+    "streaming_preset": "offline",
+    "max_clip_ms": 28000,
+    "clip_merge_gap_ms": 1500,
+    "clip_pad_ms": 200
+  },
+  "llm": {
+    "provider": "openrouter",
+    "model": "openai/gpt-4.1-mini",
+    "zdr": true,
+    "credentials_file": "~/.config/openrouter/credentials.env",
+    "api_key_env": "OPENROUTER_API_KEY"
+  },
+  "archive": {
+    "db_path": "~/Library/Application Support/Fluid Dictation/archive.sqlite",
+    "log_dictations": true
+  },
+  "meeting": {
+    "ef_clippings_dir": null,
+    "startup_raw_dir": null,
+    "team_registry_path": null,
+    "vault_confidence_threshold": 0.8,
+    "compress_audio": true,
+    "default_mic_speaker": "Mic",
+    "allowed_languages": [
+      "English",
+      "Hindi"
+    ],
+    "short_clip_drop_max_ms": 1500,
+    "post_ingest_hooks": {
+      "enabled": false,
+      "ef_command": null,
+      "startup_command": null
+    }
   }
 }

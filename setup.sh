@@ -46,7 +46,7 @@ pkill -x FluidDictation 2>/dev/null || true
 sleep 0.5
 
 echo "[2/7] Installing runtime files to $INSTALL_DIR..."
-mkdir -p "$INSTALL_DIR/hotkey" "$INSTALL_DIR/models/rumble-2-flash-8bit" "$INSTALL_DIR/models/fluid-speech-pro-mlx" "$HOME/Applications" "$HOME/Library/LaunchAgents"
+mkdir -p "$INSTALL_DIR/hotkey" "$INSTALL_DIR/models/rumble-2-flash-8bit" "$INSTALL_DIR/models/fluid-speech-pro-mlx" "$INSTALL_DIR/models/nemotron-3-diarization" "$HOME/Applications" "$HOME/Library/LaunchAgents"
 
 cp "$SRC_DIR/fluid_speech_mlx.py" "$INSTALL_DIR/"
 cp "$SRC_DIR/transcribe.py" "$INSTALL_DIR/"
@@ -62,6 +62,7 @@ cp "$SRC_DIR/hotkey/worker.py" "$INSTALL_DIR/hotkey/"
 cp "$SRC_DIR/hotkey/inference.py" "$INSTALL_DIR/hotkey/"
 cp "$SRC_DIR/hotkey/vocabulary_boost.py" "$INSTALL_DIR/hotkey/"
 cp "$SRC_DIR/hotkey/FluidDictation.swift" "$INSTALL_DIR/hotkey/"
+cp "$SRC_DIR/hotkey/"{MeetingController.swift,MeetingCapture.swift,ChromeMeetDetector.swift,discord_voice.py,meeting_pipeline.py,diarize.py,llm_provider.py,archive_db.py,meeting_mcp.py,meetings_cli.py} "$INSTALL_DIR/hotkey/"
 cp "$SRC_DIR/hotkey/build.sh" "$INSTALL_DIR/hotkey/"
 chmod +x "$INSTALL_DIR/hotkey/build.sh"
 
@@ -135,6 +136,19 @@ if [[ "$SETUP_MODELS" == "all" || "$SETUP_MODELS" == "rumble-2-flash" || "$SETUP
     fi
   else
     echo "Rumble-2-Flash weights verified."
+  fi
+
+  if [[ ! -f "$INSTALL_DIR/models/nemotron-3-diarization/model.safetensors" ]]; then
+    if [[ -f "$SRC_DIR/models/nemotron-3-diarization/model.safetensors" ]]; then
+      echo "Copying bundled Nemotron-3-Diarization weights..."
+      cp -R "$SRC_DIR/models/nemotron-3-diarization/." "$INSTALL_DIR/models/nemotron-3-diarization/"
+    else
+      echo "Downloading Nemotron-3-Diarization (~189 MB) from Hugging Face..."
+      "$INSTALL_DIR/.venv-rumble/bin/hf" download mlx-community/Nemotron-3-Diarization \
+        --local-dir "$INSTALL_DIR/models/nemotron-3-diarization"
+    fi
+  else
+    echo "Nemotron-3-Diarization weights verified."
   fi
 fi
 

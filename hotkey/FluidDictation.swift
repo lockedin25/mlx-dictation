@@ -268,9 +268,14 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     var ready = false
     var busy = false
     var recorder: AVAudioRecorder?
+    private var sharedDictation: (() -> Data)?
+    private var isDictating: Bool { recorder != nil || sharedDictation != nil }
     var recordingURL: URL?
     var recordingStartedAt = Date.distantPast
     var targetPID: pid_t?
+    var targetAppName: String = ""
+    var targetAppBundleID: String = ""
+    var lastModelName: String = ""
     var limit: Timer?
     var hotkey: EventHotKeyRef?
     var eventTap: CFMachPort?
@@ -283,6 +288,9 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     var fnUsed = false
     var fnStart = Date()
     var lastFnEventAt = Date.distantPast
+    private var meetings: AnyObject?
+    private var waitingForMeeting = false
+    private var meetingRecording = false
     var hotkeyRegistered = false
     var watchdog: Timer?
     var hud: NSPanel?
@@ -319,6 +327,23 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         perms.target = self; menu.addItem(perms)
         let quit = NSMenuItem(title: "Quit Fluid Dictation", action: #selector(quitApp), keyEquivalent: "")
         quit.target = self; menu.addItem(quit)
+        if #available(macOS 15.0, *) {
+            let controller = MeetingController(root: root, menu: menu)
+            controller.recordingChanged = { [weak self] recording in
+                self?.meetingRecording = recording
+                self?.statusItem.button?.attributedTitle = recording
+                    ? NSAttributedString(string: " REC", attributes: [.foregroundColor: NSColor.systemRed])
+                    : NSAttributedString(string: "")
+            }
+            controller.standaloneMicInUse = { [weak self] in self?.recorder != nil }
+            controller.beforeCaptureStops = { [weak self] in
+                if self?.sharedDictation != nil { self?.stopRecording() }
+            }
+            meetings = controller
+            if CommandLine.arguments.contains("--record-meeting") {
+                DispatchQueue.main.async { controller.toggle() }
+            }
+        }
         statusItem.menu = menu
         registerHotkey()
         installFnMonitor()
@@ -339,7 +364,12 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             let configured = img.withSymbolConfiguration(config) ?? img
             configured.isTemplate = true
             statusItem.button?.image = configured
-            statusItem.button?.title = ""
+            if meetingRecording {
+                statusItem.button?.attributedTitle = NSAttributedString(
+                    string: " REC", attributes: [.foregroundColor: NSColor.systemRed])
+            } else {
+                statusItem.button?.title = ""
+            }
         } else {
             statusItem.button?.image = nil
             statusItem.button?.title = fallback
@@ -352,7 +382,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         statusItem.button?.toolTip = "Fluid Dictation: \(text)"
         updateBezel(bezel, autoHideAfter: autoHideAfter)
         let status: [String: Any] = ["message": text, "modelReady": ready,
-            "recording": recorder != nil, "transcribing": busy,
+            "recording": isDictating, "transcribing": busy,
             "hotkeyRegistered": hotkeyRegistered, "eventTapActive": eventTap != nil,
             "accessibilityGranted": AXIsProcessTrusted(),
             "microphoneGranted": AVCaptureDevice.authorizationStatus(for: .audio) == .authorized,
@@ -660,9 +690,9 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             fnStart = now
             isHoldRecording = false
             fnHoldTimer?.invalidate()
-            if !other && recorder == nil && !busy && ready {
+            if !other && !isDictating && !busy && ready {
                 fnHoldTimer = Timer.scheduledTimer(withTimeInterval: 0.4, repeats: false) { [weak self] _ in
-                    guard let self = self, self.fnDown, !self.fnUsed, self.recorder == nil else { return }
+                    guard let self = self, self.fnDown, !self.fnUsed, !self.isDictating else { return }
                     self.isHoldRecording = true
                     self.beginRecording()
                 }
@@ -677,7 +707,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
             if isHoldRecording {
                 isHoldRecording = false
                 stopRecording()
-            } else if !fnUsed && (now.timeIntervalSince(fnStart) < 0.4 || recorder != nil) {
+            } else if !fnUsed && (now.timeIntervalSince(fnStart) < 0.4 || isDictating) {
                 toggle()
             }
         }
@@ -751,13 +781,18 @@ final class DictationApp: NSObject, NSApplicationDelegate {
                 busy = false
                 lastAudioSeconds = value["audio_seconds"] as? Double ?? 0
                 lastAudioRMS = value["rms"] as? Double ?? 0
+                lastModelName = value["model"] as? String ?? ""
                 let text = (value["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                 removeRecording()
                 guard !text.isEmpty else {
                     update("Ready · Press Fn to dictate", symbol: "waveform", fallback: "◌", bezel: .hidden)
                     continue
                 }
-                guard polishRequested else { deliver(text); continue }
+                guard polishRequested else {
+                    deliver(text)
+                    logDictation(rawText: text, polishedText: nil)
+                    continue
+                }
                 polishRequested = false
                 busy = true
                 polishing = true
@@ -766,6 +801,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
                     self?.busy = false
                     self?.polishing = false
                     let pasted = self?.deliver(polished ?? text) ?? false
+                    self?.logDictation(rawText: text, polishedText: polished)
                     // Only report the fallback when it was actually pasted; otherwise keep deliver's clipboard/focus message.
                     if polished == nil && pasted {
                         let msg = "Polish failed · pasted raw text"
@@ -782,7 +818,7 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
 
     @objc func toggle() {
-        if recorder != nil { stopRecording(); return }
+        if isDictating { stopRecording(); return }
         // Fn (or the shortcut) again while transcribing: polish this dictation. A quick double-tap to stop does this.
         guard !busy else { if !requestPolish() { NSSound.beep() }; return }
         // A polish double-tap that lands just after a very fast transcription must not start a new recording.
@@ -808,16 +844,26 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
 
     func beginRecording() {
-        targetPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let frontApp = NSWorkspace.shared.frontmostApplication
+        targetPID = frontApp?.processIdentifier
+        targetAppName = frontApp?.localizedName ?? ""
+        targetAppBundleID = frontApp?.bundleIdentifier ?? ""
         polishRequested = false
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("fluid-dictation-\(UUID().uuidString).wav")
+        if #available(macOS 15.0, *) {
+            let clip = MainActor.assumeIsolated { (meetings as? MeetingController)?.beginDictationClip() }
+            if let clip {
+                sharedDictation = clip
+                markDictationStarted(at: url)
+                return
+            }
+        }
         do {
             let mic = try AVAudioRecorder(url: url, settings: [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 16000, AVNumberOfChannelsKey: 1, AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false])
             mic.isMeteringEnabled = true
             guard mic.record() else { throw NSError(domain: "Fluid", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not open the default microphone"]) }
-            recordingURL = url; recorder = mic; recordingStartedAt = Date()
-            update("Recording · press shortcut to stop", symbol: "waveform.circle.fill", fallback: "●", bezel: .recording)
-            limit = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in self?.stopRecording() }
+            recorder = mic
+            markDictationStarted(at: url)
         } catch {
             try? FileManager.default.removeItem(at: url)
             let msg = "Microphone failed: \(error.localizedDescription)"
@@ -826,12 +872,34 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func markDictationStarted(at url: URL) {
+        recordingURL = url
+        recordingStartedAt = Date()
+        update("Recording · press shortcut to stop", symbol: "waveform.circle.fill", fallback: "●", bezel: .recording)
+        limit = Timer.scheduledTimer(withTimeInterval: 300, repeats: false) { [weak self] _ in self?.stopRecording() }
+    }
+
     func stopRecording() {
         limit?.invalidate(); limit = nil
         let elapsed = Date().timeIntervalSince(recordingStartedAt)
         lastStopAt = Date()
         recorder?.stop(); recorder = nil
+        let clip = sharedDictation
+        sharedDictation = nil
+        let samples = clip?()
+        if #available(macOS 15.0, *) {
+            MainActor.assumeIsolated { (meetings as? MeetingController)?.retryJoinAfterDictation() }
+        }
         guard let url = recordingURL else { return }
+        if let samples {
+            do {
+                try samples.write(to: url, options: .atomic)
+            } catch {
+                removeRecording()
+                update("Could not save dictation audio", symbol: "exclamationmark.triangle", fallback: "!")
+                return
+            }
+        }
         if elapsed < 0.25 {
             removeRecording()
             update("Ready · Press Fn to dictate", symbol: "waveform", fallback: "◌", bezel: .hidden)
@@ -942,6 +1010,24 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         }.resume()
     }
 
+    func logDictation(rawText: String, polishedText: String?) {
+        guard worker?.isRunning == true, let writer = input?.fileHandleForWriting else { return }
+        var payload: [String: Any] = [
+            "action": "log_dictation",
+            "raw_text": rawText,
+            "app_name": targetAppName,
+            "app_bundle_id": targetAppBundleID,
+            "model": lastModelName,
+            "audio_seconds": lastAudioSeconds,
+        ]
+        if let polishedText, !polishedText.isEmpty {
+            payload["polished_text"] = polishedText
+        }
+        guard var data = try? JSONSerialization.data(withJSONObject: payload) else { return }
+        data.append(10)
+        try? writer.write(contentsOf: data)
+    }
+
     func paste() {
         let source = CGEventSource(stateID: .hidSystemState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true),
@@ -953,9 +1039,27 @@ final class DictationApp: NSObject, NSApplicationDelegate {
         up.post(tap: .cghidEventTap)
     }
 
-    func removeRecording() { if let url = recordingURL { try? FileManager.default.removeItem(at: url) }; recordingURL = nil }
+    func removeRecording() {
+        _ = sharedDictation?()
+        sharedDictation = nil
+        if let url = recordingURL { try? FileManager.default.removeItem(at: url) }
+        recordingURL = nil
+    }
     func alert(_ title: String, _ message: String) { let a = NSAlert(); a.messageText = title; a.informativeText = message; a.runModal() }
     @objc func quitApp() { NSApp.terminate(nil) }
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard #available(macOS 15.0, *), let controller = meetings as? MeetingController else {
+            return .terminateNow
+        }
+        guard !waitingForMeeting else { return .terminateLater }
+        waitingForMeeting = true
+        Task { @MainActor in
+            await controller.shutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ note: Notification) {
         watchdog?.invalidate()
         limit?.invalidate(); recorder?.stop(); removeRecording()
@@ -968,7 +1072,12 @@ final class DictationApp: NSObject, NSApplicationDelegate {
     }
 }
 
-let app = NSApplication.shared
-let delegate = DictationApp()
-app.delegate = delegate
-app.run()
+@main
+struct FluidDictation {
+    @MainActor static func main() {
+        let app = NSApplication.shared
+        let delegate = DictationApp()
+        app.delegate = delegate
+        app.run()
+    }
+}

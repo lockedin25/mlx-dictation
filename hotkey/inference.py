@@ -129,7 +129,8 @@ try:
             else:
                 cfg = read_config()
                 rcfg = cfg.get('rumble_2_flash', {}) if isinstance(cfg.get('rumble_2_flash'), dict) else {}
-                language = rcfg.get('language') or None
+                req_lang = request.get('language')
+                language = (str(req_lang).strip() or None) if req_lang is not None else (rcfg.get('language') or None)
                 system_prompt = rcfg.get('system_prompt', '<digits><nofiller><verbatim>')
                 chunk_duration = float(rcfg.get('chunk_duration', 30.0))
                 hotwords = rumble_hotwords(cfg)

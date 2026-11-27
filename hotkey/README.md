@@ -74,3 +74,24 @@ Settings are in `config.json`, under `vocabulary_boost`; weights are in `../voca
 Controlled tests fixed “Rattle” to “Rahul” and “Rahul Samad” to “Rahul Samat”. The recorded speech control and a synthetic common-word control stayed unchanged. Several names/terms, including Qwen and LoRA in the synthetic vocabulary clip, were still misheard; modest boosting does not force a match. See `../results/vocabulary-boost-verification.json` for complete outputs and timings. The native shortcut/paste app, 10-second idle timeout and audio cleanup behavior are unchanged.
 
 With vocabulary boosting enabled, the same five-minute sample took 7.19 seconds including model startup, with an observed peak model footprint of 1657 MB. The lifecycle checks passed with boosting active. This is a controlled sample measurement, not a latency guarantee for arbitrary audio.
+
+## Discord meeting notes
+
+On macOS 15 or later, use **Record Discord meeting…** from the Fluid Dictation menu for a private Discord call. Stop it from the same menu. Grant microphone and audio capture access on the first test call. The red REC indicator stays visible while capture runs. The recorder reads the Mac microphone directly, so use the Fluid Dictation stop control to end local microphone capture even if Discord is muted. Confirm the meeting participants agree to recording before using either mode.
+
+To enable automatic recording in a server voice channel, save the following as `~/.config/fluid-dictation/meetings.json`. Copy the verified IDs from Discord Developer Mode. Add `peer_id` only when recording should require a specific second participant. Leave `auto_record` false until the IDs and the target call have been tested.
+
+```json
+{
+  "auto_record": false,
+  "guild_id": "REPLACE_WITH_SERVER_ID",
+  "user_id": "REPLACE_WITH_YOUR_DISCORD_ID",
+  "channel_id": "REPLACE_WITH_THE_VOICE_CHANNEL_ID",
+  "vault_raw_dir": "~/Projects/knowledge-and-wikis/Edge Inference Thesis/Edge Inference Vault/Meetings/Raw",
+  "summary_model": "openai/gpt-4.1-mini"
+}
+```
+
+The detector needs a bot with permission to connect to the selected channel. Supply its token in the app environment as `DISCORD_TOKEN` or in the private file `~/.config/fluid-dictation/discord-bot-token` with owner-only permissions. Select **Reload meeting settings** after editing. Omitting `vault_raw_dir` keeps the notes in the local meeting folder only.
+
+Rumble runs locally as audio chunks close. OpenRouter receives the original mixed-language transcript for classification and notes using `~/.config/openrouter/credentials.env`; no translated transcript is generated. Audio remains in `~/Library/Application Support/Fluid Dictation/meetings/`. **Open meeting notes** opens `~/Documents/Meeting Notes/index.md`. To rerun a failed summary or vault write, select **Retry unfinished meeting notes**. The shared thesis's `/ingest` command handles the later review, source registration, commit and push.

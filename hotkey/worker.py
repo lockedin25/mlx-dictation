@@ -11,6 +11,11 @@ import time
 
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import archive_db  # noqa: E402
+
 CONFIG = Path(os.environ.get('FLUID_CONFIG_PATH', ROOT / 'config.json'))
 STATE = Path(os.environ.get('FLUID_MODEL_STATE_PATH', ROOT / 'model-state.json'))
 child = None
@@ -150,11 +155,38 @@ def ensure_loaded():
     state(True)
 
 
+def handle_log_dictation(request):
+    cfg = read_config()
+    archive_cfg = cfg.get('archive') if isinstance(cfg.get('archive'), dict) else {}
+    if archive_cfg.get('log_dictations', True) is False:
+        emit(status='logged', skipped=True)
+        return
+    raw_text = str(request.get('raw_text') or '').strip()
+    if not raw_text:
+        emit(status='logged', skipped=True)
+        return
+    polished = request.get('polished_text')
+    polished_text = str(polished).strip() if isinstance(polished, str) and polished.strip() else None
+    archive_db.log_dictation(
+        archive_cfg.get('db_path'),
+        raw_text=raw_text,
+        polished_text=polished_text,
+        app_name=str(request.get('app_name') or ''),
+        app_bundle_id=str(request.get('app_bundle_id') or ''),
+        model=str(request.get('model') or ''),
+        audio_seconds=float(request.get('audio_seconds') or 0.0),
+    )
+    emit(status='logged')
+
+
 def handle(line):
     global last_completed
     started = time.perf_counter()
     try:
         request = json.loads(line)
+        if request.get('action') == 'log_dictation':
+            handle_log_dictation(request)
+            return
         if not isinstance(request.get('path'), str):
             raise ValueError('Expected an audio file path')
         ensure_loaded()
