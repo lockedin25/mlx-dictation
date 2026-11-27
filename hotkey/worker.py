@@ -9,6 +9,8 @@ import subprocess
 import sys
 import time
 
+import spoken_punctuation
+
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
 if str(ROOT) not in sys.path:
@@ -193,6 +195,10 @@ def handle(line):
         child.stdin.write(json.dumps(request) + '\n')
         child.stdin.flush()
         result = read_child(150)
+        enabled, ignored = spoken_punctuation.settings(read_config())
+        if enabled and result.get('status') == 'result' and result.get('text'):
+            result['raw_text'] = result['text']
+            result['text'] = spoken_punctuation.apply(result['text'], ignored)
         result['request_seconds'] = time.perf_counter() - started
         result['model_pid'] = child.pid
         last_completed = time.monotonic()
